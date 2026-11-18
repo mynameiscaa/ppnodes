@@ -73,7 +73,7 @@ func buildInbound(option *conf.Options, nodeInfo *panel.NodeInfo, tag string) (*
 	// Set SniffingConfig
 	sniffingConfig := &coreConf.SniffingConfig{
 		Enabled:      true,
-		DestOverride: &coreConf.StringList{"http", "tls"},
+		DestOverride: coreConf.StringList{"http", "tls"},
 	}
 	if option.XrayOptions.DisableSniffing {
 		sniffingConfig.Enabled = false
@@ -319,20 +319,40 @@ func buildTrojan(config *conf.Options, nodeInfo *panel.NodeInfo, inbound *coreCo
 func buildShadowsocks(config *conf.Options, nodeInfo *panel.NodeInfo, inbound *coreConf.InboundDetourConfig) error {
 	inbound.Protocol = "shadowsocks"
 	s := nodeInfo.Common.Shadowsocks
-	settings := &coreConf.ShadowsocksServerConfig{
-		Cipher: s.Cipher,
+	if config.XrayOptions.DisableIVCheck {
+		return errors.New("DisableIVCheck is no longer supported by Xray; remove it or set it to false")
 	}
-	p := make([]byte, 32)
+	cipher := strings.ToLower(s.Cipher)
+	if cipher == "none" || cipher == "plain" {
+		return fmt.Errorf("shadowsocks cipher %q is no longer supported by Xray; use an AEAD cipher", s.Cipher)
+	}
+	settings := &coreConf.ShadowsocksServerConfig{
+		Cipher: cipher,
+	}
+	keyLength := 32
+	is2022 := strings.HasPrefix(cipher, "2022-")
+	if is2022 {
+		switch cipher {
+		case "2022-blake3-aes-128-gcm":
+			keyLength = 16
+		case "2022-blake3-aes-256-gcm":
+		default:
+			return fmt.Errorf("shadowsocks 2022 multi-user cipher %q is not supported; use 2022-blake3-aes-128-gcm or 2022-blake3-aes-256-gcm", s.Cipher)
+		}
+		if s.ServerKey == "" {
+			return errors.New("shadowsocks 2022 multi-user requires a server_key")
+		}
+		settings.Password = s.ServerKey
+		cipher = ""
+	}
+	p := make([]byte, keyLength)
 	_, err := rand.Read(p)
 	if err != nil {
 		return fmt.Errorf("generate random password error: %s", err)
 	}
 	randomPasswd := hex.EncodeToString(p)
-	cipher := s.Cipher
-	if s.ServerKey != "" && strings.Contains(s.Cipher, "2022") {
-		settings.Password = s.ServerKey
-		randomPasswd = base64.StdEncoding.EncodeToString([]byte(randomPasswd))
-		cipher = ""
+	if is2022 {
+		randomPasswd = base64.StdEncoding.EncodeToString(p)
 	}
 	defaultSSuser := &coreConf.ShadowsocksUserConfig{
 		Cipher:   cipher,
@@ -340,10 +360,6 @@ func buildShadowsocks(config *conf.Options, nodeInfo *panel.NodeInfo, inbound *c
 	}
 	settings.Users = append(settings.Users, defaultSSuser)
 	settings.NetworkList = &coreConf.NetworkList{"tcp", "udp"}
-	settings.IVCheck = true
-	if config.XrayOptions.DisableIVCheck {
-		settings.IVCheck = false
-	}
 	t := coreConf.TransportProtocol("tcp")
 	inbound.StreamSetting = &coreConf.StreamConfig{Network: &t}
 	sets, err := json.Marshal(settings)

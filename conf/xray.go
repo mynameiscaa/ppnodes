@@ -52,7 +52,7 @@ type XrayOptions struct {
 	DNSType             string                  `json:"DNSType"`
 	EnableUot           bool                    `json:"EnableUot"`
 	EnableTFO           bool                    `json:"EnableTFO"`
-	DisableIVCheck      bool                    `json:"DisableIVCheck"`
+	DisableIVCheck      bool                    `json:"DisableIVCheck"` // Deprecated: Xray rejects true; retained for config migration errors.
 	DisableSniffing     bool                    `json:"DisableSniffing"`
 	EnableFallback      bool                    `json:"EnableFallback"`
 	FallBackConfigs     []FallBackConfigForXray `json:"FallBackConfigs"`

@@ -2,6 +2,7 @@ app/Inboundbuilder/.lego/
 app/legocmd/.lego/
 .vscode/launch.json
 ./vscode
-output/*
+# Local build artifacts, toolchains and dependency caches
+/output/
 .idea/*
 new.sh

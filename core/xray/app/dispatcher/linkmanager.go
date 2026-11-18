@@ -1,6 +1,7 @@
 package dispatcher
 
 import (
+	"net"
 	sync "sync"
 
 	"github.com/xtls/xray-core/common"
@@ -10,6 +11,9 @@ import (
 type ManagedWriter struct {
 	writer  buf.Writer
 	manager *LinkManager
+	// conn is only closed when removing the user, not when one stream finishes.
+	// DispatchLink's protocol reader/writer wrappers may not implement Close.
+	conn net.Conn
 }
 
 func (w *ManagedWriter) WriteMultiBuffer(mb buf.MultiBuffer) error {
@@ -39,7 +43,15 @@ func (m *LinkManager) RemoveWriter(writer *ManagedWriter) {
 }
 
 func (m *LinkManager) CloseAll() {
-	for w, r := range m.links {
+	m.mu.Lock()
+	links := m.links
+	m.links = make(map[*ManagedWriter]buf.Reader)
+	m.mu.Unlock()
+	// Closing a writer calls RemoveWriter, so close the snapshot outside the lock.
+	for w, r := range links {
+		if w.conn != nil {
+			_ = w.conn.Close()
+		}
 		common.Close(w)
 		common.Interrupt(r)
 	}
